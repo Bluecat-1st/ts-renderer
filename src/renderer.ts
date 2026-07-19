@@ -1,6 +1,6 @@
 //renderer.ts
 import { Color, type ColorRGB } from './Color.js';
-import { type LoadedImage, type LoadedFont } from './imageLoader.js';
+import { type LoadedImage, type LoadedFont, type BMFont } from './imageLoader.js';
 import { dist, type Point2D } from './Geomerty.js';
 
 const round = Math.round;
@@ -25,7 +25,7 @@ export class Renderer {
     public buffer: Uint8ClampedArray;
     /** A refrence to the raw data of `this.buffer` as a real buffer. */
     public nodeBuffer: Buffer;
-    private currentFont: LoadedFont|null;
+    private currentFont: LoadedFont|BMFont|null;
     constructor(width: number, height: number) {
         this.width = width;
         this.height = height;
@@ -193,14 +193,14 @@ export class Renderer {
      * Sets the font to use to drawing text/charaters. Recremended to use with imageLoader.ts#loadImageAsFont().
      * @param newFont - The new font to use.
      */
-    public setFont(newFont:LoadedFont){
+    public setFont(newFont:LoadedFont|BMFont){
         this.currentFont = newFont;
     }
     /**
      * Gets the current font used.
      * @returns The current font **if** set, otherwise `null`.
      */
-    public getFont():LoadedFont|null{
+    public getFont():LoadedFont|BMFont|null{
         if (this.currentFont){
             return this.currentFont;
         }
@@ -220,14 +220,22 @@ export class Renderer {
      * @param y - The `Y` postion of the top left corner of the charater.
      * @throws Throws an error if a font is not loaded.
      */
-    public drawChar(charIndex:number,x:number,y:number){
+    public drawChar(charIndex:number,x:number,y:number):{width:number,height:number}{
         if (!this.currentFont){
             throw new Error('No font is loaded for use.');
         }
-        const {charWidth, charHeight, charSize, img} = this.currentFont;
-        const charX = (charIndex%charWidth)*charSize;
-        const charY = Math.floor(charIndex/charHeight)*charSize;
-        this.drawImagePartial(img,x,y,charX,charY,charSize,charSize);
+        if ('img' in this.currentFont){
+            const {charWidth, charHeight, charSize, img} = this.currentFont;
+            const charX = (charIndex%charWidth)*charSize;
+            const charY = Math.floor(charIndex/charHeight)*charSize;
+            this.drawImagePartial(img,x,y,charX,charY,charSize,charSize);
+            return {width:charWidth,height:charHeight};
+        }else{
+            const char = this.currentFont.chars.get(charIndex);
+            if (!char) return {width:0,height:0};
+            this.drawImagePartial(this.currentFont.fontImg,x+char.xoffset,y+char.yoffset,char.x,char.y,char.width,char.height);
+            return {width:char.xadvance,height:char.height};
+        }
     }
     /**
      * Draws text on screen.
@@ -240,8 +248,16 @@ export class Renderer {
         if (!this.currentFont){
             throw new Error('No font is loaded for use.');
         }
+        let currentX = x;
+        let currentY = y;
         for (let i=0;i<text.length;i++){
-            this.drawChar(text.charCodeAt(i),x+(this.currentFont.charSize*i),y);
+            if (text[i] === '\n'){
+                currentY += ('img' in this.currentFont)?this.currentFont.charSize:this.currentFont.common.lineHeight;
+                currentX = x;
+                continue;
+            }
+            const size = this.drawChar(text.charCodeAt(i),currentX,currentY);
+            currentX += size.width;
         }
     }
     /**
@@ -253,7 +269,32 @@ export class Renderer {
         if (!this.currentFont){
             throw new Error('No font is loaded for use.')
         }
-        return {width:this.currentFont.charSize*text.length,height:this.currentFont.charSize};
+        let currentWidth = 0;
+        let currentHeight = 0;
+        let lineWidth = 0;
+        for (const char of text){
+            if (char === '\n'){
+                currentHeight += ('img' in this.currentFont)?this.currentFont.charSize:this.currentFont.common.lineHeight;
+                if (lineWidth > currentWidth){
+                    currentWidth = lineWidth;
+                }
+                lineWidth = 0;
+                continue;
+            }
+            if ('img' in this.currentFont){
+                lineWidth += this.currentFont.charSize;
+            }else{
+                const c = this.currentFont.chars.get(char.charCodeAt(0))
+                if (c){
+                    lineWidth += c.xadvance;
+                }
+            }
+        }
+        if (currentWidth < lineWidth){
+            currentWidth = lineWidth;
+        }
+        currentHeight += ('img' in this.currentFont)?this.currentFont.charSize:this.currentFont.common.lineHeight;
+        return {width:currentWidth,height:currentHeight};
     }
     /**
      * Draws a triangle on the screen. Order does not matter.
@@ -338,5 +379,5 @@ export class Renderer {
             this._fillCircle(a.x,a.y,b,c as Color|ColorRGB);
         }
     }
-
+    
 }
