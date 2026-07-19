@@ -127,6 +127,9 @@ export class Renderer {
         const index = (y * this.width + x) * 4;
         return {r:this.buffer[index]||0,g:this.buffer[index+1]||0,b:this.buffer[index+2]||0};
     }
+    private lerp(a:number,b:number,c:number){
+        return (a*c)+(b*(1-c));
+    }
     /**
      * Draws part of an image to the screen, supports alpha (Transparesy).
      * @param img - The image to draw from.
@@ -150,7 +153,6 @@ export class Renderer {
             const screenY = destY + y;
             const imageY = srcY + y;
 
-            // Boundary checks
             if (screenY < 0 || screenY >= this.height) continue;
             if (imageY < 0 || imageY >= img.height) continue;
 
@@ -165,16 +167,20 @@ export class Renderer {
                 if (imageX < 0 || imageX >= img.width) continue;
 
                 const imgIndex = (imgRowOffset + imageX) * 4;
-                const alphaByte = img.pixels[imgIndex + 3];
+                const alphaByte = img.pixels[imgIndex + 3]||0;
 
-                // 🏎️ Skip fully transparent background pixels instantly
                 if (alphaByte === 0) continue;
-
                 const screenIndex = (screenRowOffset + screenX) * 4;
-
-                this.buffer[screenIndex]     = img.pixels[imgIndex]||0;     // R
-                this.buffer[screenIndex + 1] = img.pixels[imgIndex + 1]||0; // G
-                this.buffer[screenIndex + 2] = img.pixels[imgIndex + 2]||0; // B                 // A
+                if (alphaByte === 255){
+                    this.buffer[screenIndex]     = img.pixels[imgIndex]||0;     // R
+                    this.buffer[screenIndex + 1] = img.pixels[imgIndex + 1]||0; // G
+                    this.buffer[screenIndex + 2] = img.pixels[imgIndex + 2]||0; // B
+                }else{
+                    const a = alphaByte/255;
+                    this.buffer[screenIndex    ] = this.lerp(img.pixels[imgIndex    ]||0, this.buffer[screenIndex    ]||0, a);// R
+                    this.buffer[screenIndex + 1] = this.lerp(img.pixels[imgIndex + 1]||0, this.buffer[screenIndex + 1]||0, a);// G
+                    this.buffer[screenIndex + 2] = this.lerp(img.pixels[imgIndex + 2]||0, this.buffer[screenIndex + 2]||0, a);// B
+                }
             }
         }
     }
